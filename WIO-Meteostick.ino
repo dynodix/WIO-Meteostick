@@ -23,7 +23,11 @@
 #include <WiFiManager.h>  
 #include "Seeed_HM330X.h"
 #include <FlashStorage_SAMD.h>
-#include <HTTPClient.h>
+//#include <HTTPClient.h>
+//#include <ArduinoMqttClient.h>  //Include the MQTT library
+#include <ArduinoJson.h>
+//#include <PubSubClient.h>
+#include <ArduinoHA.h>
 
 #define SERIAL Serial 
 #define SERIAL_OUTPUT Serial 
@@ -50,7 +54,6 @@ HM330X sensor;
 
 uint8_t buf[30]; 
 int ppm25;
-
 
 const char* str[] = {"sensor num: ", 
                      "PM1.0 concentration(CF=1,Standard particulate matter,unit:ug/m3): ",
@@ -170,6 +173,7 @@ WiFiClient client;
 //The udp library class
 WiFiUDP udp;
 // localtime
+
 unsigned long devicetime;
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
@@ -284,6 +288,25 @@ unsigned long sendNTPpacket(const char* address) {
     udp.endPacket();
 }
 
+//EthernetClient ethclient;
+byte mac[] = {0x00, 0x10, 0xFA, 0x6E, 0x38, 0x4A};
+//byte mac[25] = {'W', 'i', 'O', ' ', 'D', 'a', 'v', 'i','s',' ','H','o','m','e','a','s','s','i','s','t','a','n','t'};
+//char macs[] = "WiO Davis Homeassitant";
+//String s1 = "WiO Davis Homeassitant";
+//strcpy(s1,"WiO Davis Homeassitant");
+//macs.toCharArray(mac,25);
+//strcpy(mac, "WiO Davis Homeassitant");
+//macs.getBytes(macs,25);
+
+HADevice device(mac, sizeof(mac));
+HAMqtt mqtt(client, device);
+
+//HASensorNumber analogSensorTI("TemperatureInside");
+HASensorNumber analogSensorTI("TemperatureInside", HASensorNumber::PrecisionP1);
+
+//HASensorNumber analogSensorHI("HumidityInside");
+HASensorNumber analogSensorHI("HumidityInside", HASensorNumber::PrecisionP1);
+
 void setup(void)
 {
     Serial.begin(9600);
@@ -310,7 +333,7 @@ void setup(void)
        //char aqid[4];
        // Say hello to the returning user!
        Serial.print("Homeassistant settings loaded: "); 
-       Serial.print(hassio.mqttserver); Serial.print(" "); Serial.print(hassio.mqttuser);Serial.print(" "); Serial.print(hassio.mqttpass);
+       Serial.print(hassio.mqttserver); Serial.print(" User="); Serial.print(hassio.mqttuser);Serial.print(" ,Pass="); Serial.print(hassio.mqttpass);
        //strcpy(dz_server, domoticz.server);
        //dz_server=domoticz.server;
        memcpy(hass_server, hassio.mqttserver, sizeof(hassio.mqttserver));
@@ -372,7 +395,7 @@ void setup(void)
    wifiManager.setAPCallback(configModeCallback);
 
    //wifiManager.connectWifi("DOMOTICZ","041.dino.687056");
-   //wifiManager.autoConnect();
+   wifiManager.autoConnect();
  
    //Serial.println("Connecting to WiFi..");
    //WiFi.begin(ssid, password);
@@ -472,8 +495,42 @@ void setup(void)
         SERIAL.println("HM330X init failed!!!");
         //while(1);
     }
+
+  strcpy(hassio.mqttserver,"192.168.66.47");
+  strcpy(hassio.mqttuser,"Okolje"); 
+  strcpy(hassio.mqttpass,"Okolje");
+  //Set MQTT credentials
+  //mqttClient.setId(mqtt_id);
+  //mqttClient.setUsernamePassword(hassio.mqttuser, hassio.mqttpass);
+  //mqttClient.setServer(hassio.mqttserver, 1883 );
+  
+  //const char* mqttServer = "192.168.66.47"; // The IP of your MQTT broker
+  //const int mqttPort = 1883;
+  //const char* mqttUser = "Okolje";
+  //const char* mqttPassword = "Okolje";
+  String mqttname = "WiOTH";
   
   updateDelay.start(12 * 60 * 60 * 1000); // update time via ntp every 12 hrs
+
+  //Ethernet.begin(mac);
+  device.setName("WiO Davis Weather");
+  device.setSoftwareVersion("1.0.0");
+
+    // configure sensor (optional)
+  analogSensorTI.setIcon("mdi:thermometer");
+  analogSensorTI.setName("Temperature Inside");
+  analogSensorTI.setUnitOfMeasurement("C");
+
+  analogSensorHI.setIcon("mdi:water-percent");
+  analogSensorHI.setName("Humidity Inside");
+  analogSensorHI.setUnitOfMeasurement("%");  
+
+    //mqtt.begin(BROKER_ADDR);
+    //mqtt.begin(hassio.mqttserver);
+  //Serial.println("Connecting to mqtt: ");    
+  mqtt.begin(hassio.mqttserver, hassio.mqttuser, hassio.mqttpass);
+  //Serial.println("end Connecting to mqtt");    
+
         
 }
  
@@ -483,6 +540,8 @@ void loop(void)
     float humi = 0;
     int SoilMoisture = 0;
     int Flies = 0;
+
+//    Ethernet.maintain();
 
     if ((digitalRead(WIO_KEY_C) == LOW) && (digitalRead(WIO_KEY_B) == LOW))
      {
@@ -494,8 +553,7 @@ void loop(void)
        NVIC_SystemReset();
      }
     
-
-    
+       
     DateTime now = DateTime(F(__DATE__), F(__TIME__));
     static uint8_t data[5] = { 0x00 };  //Use the data[] to store the values of the sensors    
 
@@ -532,7 +590,7 @@ void loop(void)
     sprintf(clocks, "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
     //temps = strcat(temps, " *C")
    
-    data_record(temp,humi,Flies,SoilMoisture,data);    
+    //data_record(temp,humi,Flies,SoilMoisture,data);    
       
     //Display the Values on Screen
     spr.createSprite(100, 30);
@@ -592,15 +650,25 @@ void loop(void)
       Serial.print(humis);
       Serial.print(" \t");
       Serial.println(clocks);
+
+      //uint16_t reading = analogRead(ANALOG_PIN);
+      //float voltage = reading * 5.f / 1023.f; // 0.0V - 5.0V
+      analogSensorTI.setValue(temp);
+    
+      analogSensorHI.setValue(humi);
+
       //delay(60000);
     } 
     
     if (now.minute() != prevmin )
     {
         prevmin=now.minute();
+        // Send Homeassistant data
+
         
       //delay(300);         
     } 
     delay(800);
  // delay(1800000);
+  mqtt.loop();    
 }
