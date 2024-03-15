@@ -101,6 +101,7 @@ int prevmin = 0;
 HM330X sensor;
 
 uint8_t buf[30]; 
+uint8_t bufppm[30]; 
 int ppm25;
 float temp = 0;
 float humi = 0;
@@ -577,6 +578,13 @@ void setup(void)
   */
 }
  
+char * GetSegment(char *input, char *delimiter)
+{
+    char * res = strtok(input, delimiter);
+    strtok(NULL, delimiter);
+    return res;
+}
+
 void loop(void)
 {
 
@@ -602,31 +610,34 @@ void loop(void)
     uint8_t rcode;
     int bytesIn;
     char buf[64]; // was 64
+    char bufout[64]; // was 64
+    char bufppm[64]; // was 64
     char rcvc[64];  // was 64
+    char * saved;
 
     if (startingproc>0) 
     {
       bytesIn=4;
-      strcpy(buf,"t1\n");
-      rcode = Ftdi.SndData(bytesIn, (uint8_t*)buf);
+      strcpy(bufout,"t1\n");
+      rcode = Ftdi.SndData(bytesIn, (uint8_t*)bufout);
       if (rcode)
           ErrorMessage<uint8_t>(PSTR("SndData"), rcode);
       SERIAL_OUTPUT.write("Sent t1");
       delay(200);
-      strcpy(buf,"f1\n");
-      rcode = Ftdi.SndData(bytesIn, (uint8_t*)buf);
+      strcpy(bufout,"f1\n");
+      rcode = Ftdi.SndData(bytesIn, (uint8_t*)bufout);
       if (rcode)
           ErrorMessage<uint8_t>(PSTR("SndData"), rcode);
       SERIAL_OUTPUT.write("Sent f1");
       delay(200);
-      strcpy(buf,"o1\n");
-      rcode = Ftdi.SndData(bytesIn, (uint8_t*)buf);
+      strcpy(bufout,"o1\n");
+      rcode = Ftdi.SndData(bytesIn, (uint8_t*)bufout);
       if (rcode)
           ErrorMessage<uint8_t>(PSTR("SndData"), rcode);
       SERIAL_OUTPUT.write("Sent o1");
       delay(200);
-      strcpy(buf,"m1\n");
-      rcode = Ftdi.SndData(bytesIn, (uint8_t*)buf);
+      strcpy(bufout,"m1\n");
+      rcode = Ftdi.SndData(bytesIn, (uint8_t*)bufout);
       if (rcode)
           ErrorMessage<uint8_t>(PSTR("SndData"), rcode);
       SERIAL_OUTPUT.write("Sent m1");
@@ -654,70 +665,15 @@ void loop(void)
         memcpy(&rcvc,buf+2,rcvd-2);
         // split rcvc based on \n as multiple nisec can be in the buffer 
 
-
-        char *array[64];
-        int ai = 0;
-        array[ai] = strtok(rcvc," ");
-    
-        while(array[ai] != NULL) 
+        char * liner = strtok_r(rcvc, "\n", &saved );
+        while (liner != NULL)  //iterate throught the array
         {
-           array[++ai] = strtok(NULL," ");
-        } 
-    
-        if (array[0] != NULL) 
-        {
-          //SERIAL_OUTPUT.print("_");
-          SERIAL_OUTPUT.print(array[0][0]);
-          SERIAL_OUTPUT.print(" \t");
-          SERIAL_OUTPUT.print(array[2]);
-          SERIAL_OUTPUT.print(" \t");
-          SERIAL_OUTPUT.println(array[3]);
-      
-          //char func ;
-          //sprintf("%c", array[0], func);
+           //SERIAL_OUTPUT.printf("liner: %s\n", liner);
+           ProcessLine(liner); //split the sub string
 
-          if ((array[0][0] == 'T') && isDigit(array[1][0])) 
-          {
-            if (array[2] != NULL) 
-              tempout = atof(array[2]);      
-            if (array[3] != NULL)    
-              humiout = atof(array[3]);
-          }
-          
-          if (array[0][0] == 'B') 
-          { 
-              // temp = atoi(array[2]);       // Internal temperature
-            if (array[2] != NULL) 
-            {
-              temp = atof(array[1]);            // Internal temperature
-              Barometer = atof(array[2]);       // pressure in hPa
-            }
-          }     
-          
-          if ((array[0][0] == 'W') && isDigit(array[1][0]))
-          {
-            if (array[2] != NULL) 
-              WindSpeed = atof(array[2]);       // Current Wind speed m/s
-            if (array[3] != NULL)  
-              WindDirection = atof(array[3]);       // Wind direction in degrees      
-          }                   
-          
-          if ((array[0][0] == 'R') && isDigit(array[1][0]))
-          {  // 
-              if (array[2] != NULL) 
-                 RainClicks = atof(array[2]);       // Rain Clicks
-          }     
-
-          if ((array[0][0] == 'P') && isDigit(array[1][0]))
-          {  // 
-              if (array[2] != NULL) 
-                 Battery = atof(array[2]);       // Solar panel
-          }     
-        } // if (array[0] != NULL)
-      
+           liner = strtok_r(NULL, "\n", &saved); //where is strtok() continuing from ?
+        }     
       }  // if (rcvd > 2) {
-        // ----------------------------------------------------- 
-      //}
     } // else
   }
     
@@ -794,12 +750,12 @@ void loop(void)
     //if (now.minute() == 7 or now.minute() == 37)
     if ((now.second() % 10) == 0)
     {
-      if (sensor.read_sensor_value(buf, 29)) {
+      if (sensor.read_sensor_value(bufppm, 29)) {
            //SERIAL_OUTPUT.println("HM330X read result failed!!");
            //SERIAL_OUTPUT.println("HM330X read result failed!!");
       }
       //parse_result_value(buf);
-      parse_result(buf);
+      parse_result(bufppm);
       //SERIAL_OUTPUT.println("");
       
       //sprintf(ppm2s, "%d ppm", ppm25);
@@ -810,7 +766,7 @@ void loop(void)
       spr.pushSprite(180, 140);
       spr.deleteSprite();
 
-
+/*
       SERIAL_OUTPUT.print("Temperature: ");
       SERIAL_OUTPUT.print(temps);    
       SERIAL_OUTPUT.print(" \t");
@@ -822,6 +778,7 @@ void loop(void)
       SERIAL_OUTPUT.print(Barometer);    
       SERIAL_OUTPUT.print(" \t");
       SERIAL_OUTPUT.println(" ");
+*/      
 
       analogSensorTI.setValue(temp);
       analogSensorHI.setValue(humi);
@@ -854,21 +811,77 @@ void loop(void)
   mqtt.loop();    
 }
 
-/*
-void SERCOM3_0_Handler()
+void ProcessLine(char * sub)
 {
-  Serial3.IrqHandler();
+  char *carray[64];
+  char * plus;
+  int ai = 0; 
+  carray[ai] = strtok_r(sub, " ", &plus); 
+  //SERIAL_OUTPUT.println(sub);
+  
+  while(carray[ai] != NULL) 
+  {
+    carray[++ai] = strtok_r(NULL," ", &plus); 
+  }         
+ 
+  if (carray[0] != NULL) 
+  {
+          SERIAL_OUTPUT.print(">>> ");
+          SERIAL_OUTPUT.print(carray[0][0]);
+          SERIAL_OUTPUT.print(",");
+          if (carray[1] != NULL) {
+             SERIAL_OUTPUT.print(carray[1]);
+             SERIAL_OUTPUT.print(",");
+          }
+          if (carray[2] != NULL) {          
+             SERIAL_OUTPUT.print(carray[2]);
+             SERIAL_OUTPUT.print(",");
+          }
+          if (carray[3] != NULL) {
+             SERIAL_OUTPUT.print(carray[3]);
+             SERIAL_OUTPUT.print(",");          
+          }
+          SERIAL_OUTPUT.println(" <<< ");
+
+
+   
+          if (carray[0][0] == 'T') 
+          {
+            if (carray[2] != NULL) 
+              tempout = atof(carray[2]);      
+            if (carray[3] != NULL)    
+              humiout = atof(carray[3]);
+          }
+          
+          if (carray[0][0] == 'B') 
+          { 
+              // temp = atoi(array[2]);       // Internal temperature
+            if (carray[2] != NULL) 
+            {
+              temp = atof(carray[1]);            // Internal temperature
+              Barometer = atof(carray[2]);       // pressure in hPa
+            }
+          }     
+          
+          if (carray[0][0] == 'W')
+          {
+            if (carray[2] != NULL) 
+              WindSpeed = atof(carray[2]);       // Current Wind speed m/s
+            if (carray[3] != NULL)  
+              WindDirection = atof(carray[3]);       // Wind direction in degrees      
+          }                   
+          
+          if (carray[0][0] == 'R') 
+          {  // 
+              if (carray[2] != NULL) 
+                 RainClicks = atof(carray[2]);       // Rain Clicks
+          }     
+
+          if (carray[0][0] == 'P')
+          {  // 
+              if (carray[2] != NULL) 
+                 Battery = atof(carray[2]);       // Solar panel
+          }     
+  } 
+   // ------------------------------------------------------------------------------
 }
-void SERCOM3_1_Handler()
-{
-  Serial3.IrqHandler();
-}
-void SERCOM3_2_Handler()
-{
-  Serial3.IrqHandler();
-}
-void SERCOM3_3_Handler()
-{
-  Serial3.IrqHandler();
-}
-*/
